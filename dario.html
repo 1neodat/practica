@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Método Simplex - Programación Lineal</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; background: #f5f5f5;}
+        h2 { color: #263159; }
+        .container { background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 6px #0001; max-width: 650px; margin:auto;}
+        input[type="number"] { width: 60px; }
+        label { margin-right: 12px; }
+        .matriz { margin-bottom: 14px; }
+        .btn { background: #a91d3a; color: #fff; border: none; padding: 8px 18px; border-radius: 8px; cursor: pointer;}
+        .btn:hover { background: #26425a;}
+        table { margin-top: 18px; border-collapse: collapse;}
+        th, td { border: 1px solid #aaa; padding: 6px 10px;}
+        th { background: #ffd34e;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Resolución de Programación Lineal por Método Simplex</h2>
+        <form id="formSimplex" onsubmit="return false;">
+            <div>
+                <label>Número de variables:</label>
+                <input type="number" id="numVar" min="2" max="5" value="2">
+                <label>Número de restricciones:</label>
+                <input type="number" id="numRest" min="2" max="5" value="2">
+                <button class="btn" type="button" onclick="generarTabla()">Configurar</button>
+            </div>
+            <div id="ingresoDatos"></div>
+            <div id="btnResolver"></div>
+        </form>
+        <div id="resultado"></div>
+    </div>
+    <script>
+        function generarTabla() {
+            let nv = parseInt(document.getElementById('numVar').value);
+            let nr = parseInt(document.getElementById('numRest').value);
+            let html = '<div class="matriz"><b>Función Objetivo: Maximizar Z =</b><br>';
+            for (let i=0; i<nv; i++) {
+                html += `<input type="number" id="obj${i}" value="0" step="any"> x<sub>${i+1}</sub> `;
+                if(i<nv-1) html += '+ ';
+            }
+            html += '</div><b>Restricciones:</b><br>';
+            for (let i=0; i<nr; i++) {
+                for (let j=0; j<nv; j++) {
+                    html += `<input type="number" id="rest${i}_${j}" value="0" step="any"> x<sub>${j+1}</sub> `;
+                    if(j<nv-1) html += '+ ';
+                }
+                html += `≤ <input type="number" id="rhs${i}" value="0" step="any"><br>`;
+            }
+            html += `<p><small>Solo se admiten restricciones ≤ y maximización.</small></p>`;
+            document.getElementById('ingresoDatos').innerHTML = html;
+            document.getElementById('btnResolver').innerHTML = `<button class="btn" type="button" onclick="resolverSimplex()">Resolver</button>`;
+            document.getElementById('resultado').innerHTML = '';
+        }
+
+        function resolverSimplex() {
+            let nv = parseInt(document.getElementById('numVar').value);
+            let nr = parseInt(document.getElementById('numRest').value);
+
+            // Función objetivo
+            let c = [];
+            for(let i=0;i<nv;i++) c.push(parseFloat(document.getElementById('obj'+i).value));
+
+            // Matriz de restricciones y lado derecho
+            let A = [];
+            let b = [];
+            for(let i=0;i<nr;i++) {
+                let fila = [];
+                for(let j=0;j<nv;j++) {
+                    fila.push(parseFloat(document.getElementById(`rest${i}_${j}`).value));
+                }
+                A.push(fila);
+                b.push(parseFloat(document.getElementById(`rhs${i}`).value));
+            }
+
+            // Armar tabla simplex (añadir variables de holgura)
+            let tabla = [];
+            for(let i=0;i<nr;i++) {
+                let fila = A[i].slice();
+                for(let j=0;j<nr;j++) fila.push(i==j?1:0); // variables de holgura
+                fila.push(b[i]); // término independiente
+                tabla.push(fila);
+            }
+            let Zfila = c.concat(Array(nr+1).fill(0)); // Z - fila (negativa para maximizar)
+            for(let i=0;i<nv;i++) Zfila[i] *= -1;
+
+            // Iterar simplex
+            let iter = 0;
+            let maxIter = 20;
+            let basicas = [];
+            for(let i=0;i<nr;i++) basicas.push(nv+i);
+            let log = `<h3>Iteraciones Simplex</h3><table><tr><th>Iteración</th><th>Tabla</th></tr>`;
+            while(iter < maxIter) {
+                // Mostrar tabla
+                let titulos = [];
+                for(let i=0;i<nv;i++) titulos.push('x'+(i+1));
+                for(let i=0;i<nr;i++) titulos.push('s'+(i+1));
+                titulos.push('T.I.');
+                let t='<table><tr><th></th>';
+                for(let i=0;i<titulos.length;i++) t+=`<th>${titulos[i]}</th>`;
+                t+='</tr>';
+                for(let i=0;i<tabla.length;i++) {
+                    t+=`<tr><td>${titulos[basicas[i]]}</td>`;
+                    for(let j=0;j<tabla[i].length;j++) t+=`<td>${tabla[i][j].toFixed(2)}</td>`;
+                    t+='</tr>';
+                }
+                t+='<tr><td>Z</td>';
+                for(let i=0;i<Zfila.length;i++) t+=`<td>${Zfila[i].toFixed(2)}</td>`;
+                t+='</tr></table>';
+                log+=`<tr><td>${iter+1}</td><td>${t}</td></tr>`;
+
+                // Buscar columna pivote (la más negativa en Z)
+                let pivCol = -1, minZ = 1e-8;
+                for(let j=0;j<Zfila.length-1;j++) {
+                    if(Zfila[j] < minZ) {
+                        minZ = Zfila[j];
+                        pivCol = j;
+                    }
+                }
+                if(pivCol === -1) break; // Óptimo
+
+                // Buscar fila pivote (mínima razón positiva)
+                let pivFila = -1, minRaz = 1e20;
+                for(let i=0;i<nr;i++) {
+                    let v = tabla[i][pivCol];
+                    if(v>1e-8) {
+                        let razon = tabla[i][tabla[i].length-1]/v;
+                        if(razon < minRaz) {
+                            minRaz = razon;
+                            pivFila = i;
+                        }
+                    }
+                }
+                if(pivFila === -1) {
+                    document.getElementById('resultado').innerHTML = "<b>El problema es no acotado.</b>"+log+"</table>";
+                    return;
+                }
+
+                // Pivotear
+                let piv = tabla[pivFila][pivCol];
+                for(let j=0;j<tabla[pivFila].length;j++) tabla[pivFila][j]/=piv;
+                for(let i=0;i<nr;i++) if(i!=pivFila) {
+                    let f = tabla[i][pivCol];
+                    for(let j=0;j<tabla[i].length;j++) tabla[i][j]-=f*tabla[pivFila][j];
+                }
+                let fZ = Zfila[pivCol];
+                for(let j=0;j<Zfila.length;j++) Zfila[j]-=fZ*tabla[pivFila][j];
+                basicas[pivFila] = pivCol;
+                iter++;
+            }
+            log+="</table>";
+            // Solución óptima
+            let sol = Array(nv+nr).fill(0);
+            for(let i=0;i<nr;i++) sol[basicas[i]]=tabla[i][tabla[i].length-1];
+            let solVars = sol.slice(0,nv).map((v,i)=>`x${i+1}=${v.toFixed(2)}`).join(', ');
+            let zOpt = Zfila[Zfila.length-1].toFixed(2);
+            document.getElementById('resultado').innerHTML = `<h3>Solución Óptima</h3><b>${solVars}</b><br><b>Z = ${zOpt}</b>${log}`;
+        }
+    </script>
+</body>
+</html>
